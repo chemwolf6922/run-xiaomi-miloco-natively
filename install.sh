@@ -1,4 +1,18 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+on_error() {
+    local exit_code=$?
+    local line_no=$1
+    echo "[install.sh] Error: command failed with exit code ${exit_code} on line ${line_no}." >&2
+}
+
+trap 'on_error $LINENO' ERR
+
 OUTPUT_PATH="$PWD/output"
+
+mkdir -p "$OUTPUT_PATH"
 
 MILOCO_PATH=$1
 
@@ -9,27 +23,28 @@ fi
 
 # Prepare a Python virtual environment
 
-if ! command -v python3 >/dev/null 2>&1; then
-    echo "python3 is required but not installed."
+if ! command -v python >/dev/null 2>&1; then
+    echo "python is required but not installed."
     exit 1
 fi
 
+PIP_COMMAND="python -m pip"
+if command -v uv >/dev/null 2>&1; then
+    PIP_COMMAND="uv pip"
+fi
+
+mkdir -p "$PWD/.venv"
 VENV_TARGET="$PWD/.venv/miloco"
 
-if [ -n "$VIRTUAL_ENV" ]; then
-    read -r -p "Detected virtual environment at $VIRTUAL_ENV. Use it? [y/N] " use_current
-    if [[ ! "$use_current" =~ ^[Yy]$ ]]; then
-        python3 -m venv "$VENV_TARGET"
-        # shellcheck disable=SC1091
-        . "$VENV_TARGET/bin/activate"
+if [ ! -d "$VENV_TARGET" ]; then
+    if command -v uv >/dev/null 2>&1; then
+        uv venv "$VENV_TARGET"
+    else
+        python -m venv "$VENV_TARGET"
     fi
-else
-    if [ ! -d "$VENV_TARGET" ]; then
-        python3 -m venv "$VENV_TARGET"
-    fi
-    # shellcheck disable=SC1091
-    . "$VENV_TARGET/bin/activate"
 fi
+# shellcheck disable=SC1091
+source "$VENV_TARGET/bin/activate"
 
 # Install the python backend packages
 
@@ -45,11 +60,11 @@ MILOCO_SERVER_TARGET_PATH="$OUTPUT_PATH/miloco_server"
 rm -rf "$MILOCO_SERVER_TARGET_PATH"
 cp -r "$MILOCO_SERVER_SOURCE_PATH" "$MILOCO_SERVER_TARGET_PATH"
 
-python -m pip install --upgrade pip setuptools wheel
+$PIP_COMMAND install setuptools wheel
 
-python -m pip uninstall -y miloco-server miloco-kit 2>/dev/null || true
-python -m pip install -e "$MIOT_KIT_TARGET_PATH"
-python -m pip install -e "$MILOCO_SERVER_TARGET_PATH"
+$PIP_COMMAND pip uninstall -y miloco-server miloco-kit 2>/dev/null || true
+$PIP_COMMAND install -e "$MIOT_KIT_TARGET_PATH"
+$PIP_COMMAND install -e "$MILOCO_SERVER_TARGET_PATH"
 
 # Copy configuration files
 
